@@ -1,10 +1,12 @@
 import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import type { MediaPlayerInstance } from "@vidstack/react";
 import { api, fmtTime, pollJob } from "../api";
 import type { Job, Segment, SourceResult, Suggestion } from "../types";
 import type { Notify } from "../App";
 import { EmptyState, ProgressBar, Spinner } from "../components/ui";
 import Timeline from "./Timeline";
+import Player from "./Player";
 
 interface Props {
   niche: string;
@@ -31,7 +33,7 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
 
   const [intake, setIntake] = useState<{ stage: string; progress: number } | null>(null);
   const [busy, setBusy] = useState<"" | "suggest" | "render">("");
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<MediaPlayerInstance>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const runIntake = async (start: () => Promise<{ job_id: string }>) => {
@@ -102,7 +104,7 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
   const removeSeg = (id: string) => setSegments((prev) => prev.filter((s) => s.id !== id));
 
   const seek = (t: number) => {
-    if (videoRef.current) videoRef.current.currentTime = t;
+    if (playerRef.current) playerRef.current.currentTime = t;
     setCurrent(t);
   };
 
@@ -176,12 +178,11 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
                   </button>
                 </div>
               </div>
-              <video
-                ref={videoRef}
+              <Player
                 src={source.video_url}
-                controls
-                onTimeUpdate={(e) => setCurrent((e.target as HTMLVideoElement).currentTime)}
-                className="aspect-video w-full bg-black"
+                title={source.title}
+                playerRef={playerRef}
+                onTime={setCurrent}
               />
             </div>
 

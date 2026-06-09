@@ -24,6 +24,8 @@ interface DragState {
 }
 
 const SNAP_PX = 7; // snap a dragged edge to a scene cut within this many pixels
+const TRACK_H = 76; // filmstrip height (px)
+const TILE_W = 128; // target thumbnail width → 16:9 against TRACK_H
 
 export default function Timeline({
   duration,
@@ -39,10 +41,20 @@ export default function Timeline({
   const trackRef = useRef<HTMLDivElement>(null);
   const drag = useRef<DragState | null>(null);
   const [hoverT, setHoverT] = useState<number | null>(null);
+  const [width, setWidth] = useState(1000);
+
+  // keep the real pixel width so px↔time math (and tile count) is correct + responsive
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => setWidth(e.contentRect.width));
+    ro.observe(el);
+    setWidth(el.getBoundingClientRect().width);
+    return () => ro.disconnect();
+  }, []);
 
   const pct = (t: number) => `${(t / duration) * 100}%`;
-  const widthPx = () => trackRef.current?.getBoundingClientRect().width ?? 1;
-  const pxToTime = (px: number) => (px / widthPx()) * duration;
+  const pxToTime = useCallback((px: number) => (px / width) * duration, [width, duration]);
 
   const snapToScene = useCallback(
     (t: number) => {
@@ -58,7 +70,7 @@ export default function Timeline({
       }
       return best;
     },
-    [scenes, duration],
+    [scenes, pxToTime],
   );
 
   // --- dragging segments ---
@@ -90,7 +102,7 @@ export default function Timeline({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [duration, onChange, snapToScene]);
+  }, [duration, onChange, snapToScene, pxToTime]);
 
   const startDrag = (e: React.PointerEvent, seg: Segment, mode: DragMode) => {
     e.stopPropagation();
@@ -104,19 +116,19 @@ export default function Timeline({
     const rect = trackRef.current!.getBoundingClientRect();
     onSeek(((e.clientX - rect.left) / rect.width) * duration);
   };
-
   const trackMove = (e: React.PointerEvent) => {
     const rect = trackRef.current!.getBoundingClientRect();
     setHoverT(((e.clientX - rect.left) / rect.width) * duration);
   };
 
-  // filmstrip background tiles
-  const tiles = Math.max(1, Math.min(filmstrip.cols * filmstrip.rows, Math.ceil(duration / filmstrip.interval)));
+  // --- filmstrip: render frames at a readable width that tile the full track ---
+  const framesAvail = Math.max(1, Math.min(filmstrip.cols * filmstrip.rows, Math.ceil(duration / filmstrip.interval)));
+  const tileCount = Math.max(4, Math.min(framesAvail, Math.round(width / TILE_W)));
 
   return (
     <div className="select-none">
       {/* time ruler */}
-      <div className="relative mb-1 h-4 text-[10px] text-ink-500">
+      <div className="relative mb-1.5 h-4 text-[10px] text-ink-500">
         {Array.from({ length: 11 }).map((_, i) => (
           <span key={i} className="absolute -translate-x-1/2 tabular-nums" style={{ left: `${i * 10}%` }}>
             {fmtTime((duration * i) / 10)}
@@ -129,33 +141,39 @@ export default function Timeline({
         onPointerDown={trackClick}
         onPointerMove={trackMove}
         onPointerLeave={() => setHoverT(null)}
-        className="relative h-20 w-full cursor-text overflow-hidden rounded-xl border border-ink-700 bg-ink-950"
+        className="relative w-full cursor-text overflow-hidden rounded-xl border border-ink-700 bg-ink-950"
+        style={{ height: TRACK_H }}
       >
-        {/* filmstrip */}
-        <div className="pointer-events-none absolute inset-0 flex opacity-50">
-          {Array.from({ length: tiles }).map((_, i) => {
-            const r = Math.floor(i / filmstrip.cols);
-            const c = i % filmstrip.cols;
+        {/* filmstrip (real frames) */}
+        <div className="pointer-events-none absolute inset-0 flex">
+          {Array.from({ length: tileCount }).map((_, i) => {
+            const frame = Math.min(framesAvail - 1, Math.round(((i + 0.5) / tileCount) * framesAvail));
+            const r = Math.floor(frame / filmstrip.cols);
+            const c = frame % filmstrip.cols;
             return (
               <div
                 key={i}
-                className="h-full flex-1 border-r border-ink-950/40"
+                className="h-full bg-cover"
                 style={{
+                  width: `${100 / tileCount}%`,
                   backgroundImage: `url(${filmstrip.url})`,
                   backgroundSize: `${filmstrip.cols * 100}% ${filmstrip.rows * 100}%`,
                   backgroundPosition: `${(c / Math.max(1, filmstrip.cols - 1)) * 100}% ${
                     (r / Math.max(1, filmstrip.rows - 1)) * 100
                   }%`,
+                  boxShadow: "inset -1px 0 0 rgba(0,0,0,0.35)",
                 }}
               />
             );
           })}
         </div>
+        {/* darken filmstrip slightly so overlays read clearly */}
+        <div className="pointer-events-none absolute inset-0 bg-ink-950/25" />
 
         {/* scene-cut ticks */}
-        <div className="pointer-events-none absolute inset-0">
+        <div className="pointer-events-none absolute inset-x-0 top-0">
           {scenes.map((s, i) => (
-            <span key={i} className="absolute top-0 h-2 w-px bg-accent-soft/60" style={{ left: pct(s) }} />
+            <span key={i} className="absolute top-0 h-2.5 w-px bg-white/40" style={{ left: pct(s) }} />
           ))}
         </div>
 
@@ -166,39 +184,37 @@ export default function Timeline({
             <div
               key={seg.id}
               onPointerDown={(e) => startDrag(e, seg, "move")}
-              className={`group absolute top-0 bottom-0 cursor-grab active:cursor-grabbing rounded-md border transition-shadow ${
+              className={`group absolute top-0 bottom-0 cursor-grab rounded-md border-2 transition-shadow active:cursor-grabbing ${
                 isSel
-                  ? "border-accent bg-accent/25 shadow-glow z-20"
-                  : "border-accent/50 bg-accent/15 hover:bg-accent/20 z-10"
+                  ? "z-20 border-accent bg-accent/25 shadow-glow"
+                  : "z-10 border-accent/60 bg-accent/15 hover:bg-accent/25"
               }`}
               style={{ left: pct(seg.start), width: pct(seg.end - seg.start) }}
             >
-              {/* left handle */}
               <span
                 onPointerDown={(e) => startDrag(e, seg, "start")}
-                className="absolute left-0 top-0 z-10 h-full w-2 cursor-ew-resize rounded-l-md bg-accent/70 opacity-0 transition-opacity group-hover:opacity-100"
-                style={{ opacity: isSel ? 1 : undefined }}
-              />
-              {/* right handle */}
+                className="absolute left-0 top-0 z-10 flex h-full w-2.5 cursor-ew-resize items-center justify-center rounded-l bg-accent/80"
+              >
+                <span className="h-5 w-0.5 rounded bg-white/80" />
+              </span>
               <span
                 onPointerDown={(e) => startDrag(e, seg, "end")}
-                className="absolute right-0 top-0 z-10 h-full w-2 cursor-ew-resize rounded-r-md bg-accent/70 opacity-0 transition-opacity group-hover:opacity-100"
-                style={{ opacity: isSel ? 1 : undefined }}
-              />
+                className="absolute right-0 top-0 z-10 flex h-full w-2.5 cursor-ew-resize items-center justify-center rounded-r bg-accent/80"
+              >
+                <span className="h-5 w-0.5 rounded bg-white/80" />
+              </span>
               <div className="pointer-events-none flex h-full flex-col justify-between p-1.5">
                 <div className="flex items-center gap-1">
-                  {seg.source === "ai" ? (
-                    <span className="rounded bg-black/40 px-1 text-[9px] font-semibold text-accent-soft">AI</span>
-                  ) : (
-                    <span className="rounded bg-black/40 px-1 text-[9px] font-semibold text-ink-300">✎</span>
-                  )}
+                  <span className="rounded bg-black/55 px-1 text-[9px] font-semibold text-accent-soft">
+                    {seg.source === "ai" ? "AI" : "✎"}
+                  </span>
                   {typeof seg.score === "number" && (
-                    <span className="rounded bg-black/40 px-1 text-[9px] tabular-nums text-ink-200">
+                    <span className="rounded bg-black/55 px-1 text-[9px] tabular-nums text-ink-100">
                       {seg.score.toFixed(2)}
                     </span>
                   )}
                 </div>
-                <span className="rounded bg-black/50 px-1 text-[9px] tabular-nums text-ink-100">
+                <span className="self-start rounded bg-black/60 px-1 text-[9px] tabular-nums text-ink-100">
                   {fmtTime(seg.end - seg.start)}
                 </span>
               </div>
@@ -206,14 +222,18 @@ export default function Timeline({
           );
         })}
 
-        {/* hover guide */}
+        {/* hover guide + tooltip */}
         {hoverT !== null && !drag.current && (
-          <span className="pointer-events-none absolute top-0 bottom-0 w-px bg-ink-400/40" style={{ left: pct(hoverT) }} />
+          <span className="pointer-events-none absolute top-0 bottom-0 z-30 w-px bg-white/50" style={{ left: pct(hoverT) }}>
+            <span className="absolute -top-5 left-1/2 -translate-x-1/2 rounded bg-ink-800 px-1 text-[9px] tabular-nums text-ink-200">
+              {fmtTime(hoverT)}
+            </span>
+          </span>
         )}
 
         {/* playhead */}
-        <span className="pointer-events-none absolute top-0 bottom-0 z-30 w-0.5 bg-white" style={{ left: pct(current) }}>
-          <span className="absolute -top-0 -left-[5px] h-3 w-3 -translate-y-0 rotate-45 rounded-sm bg-white" />
+        <span className="pointer-events-none absolute top-0 bottom-0 z-40 w-0.5 bg-white shadow-[0_0_6px_rgba(255,255,255,0.5)]" style={{ left: pct(current) }}>
+          <span className="absolute -left-[5px] -top-[3px] h-3 w-3 rotate-45 rounded-sm bg-white" />
         </span>
       </div>
     </div>

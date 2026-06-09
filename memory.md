@@ -123,6 +123,18 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Changelog
 
+- **2026-06-09** — **Studio player + filmstrip fix.** User: the timeline looked like noise and the
+  raw `<video>` was poor. Root cause: the filmstrip squished up to 100 sprite frames into ~11px tiles
+  (vertical smears) — the **sprite itself is fine** (verified: clean 10×10 frame grid). Fixes:
+  (1) **Player → Vidstack** (`@vidstack/react` 1.15.5 — note its npm `latest` tag is stale 0.6.15, so
+  pin 1.x; modern `DefaultVideoLayout`); `web/frontend/src/views/Player.tsx` exposes a
+  `MediaPlayerInstance` ref so the timeline seeks via `player.currentTime`. (2) **Filmstrip rebuilt**
+  to render readable frames that tile the track (count = round(width/128) via ResizeObserver), real
+  px↔time math, nicer scene ticks + drag handles + hover tooltip. Verified in headless Chrome on the
+  22-min R&M source: filmstrip shows recognizable frames, **407 scene cuts** render, 8 AI segments
+  overlay + drag, Vidstack controls present, 0 console errors. Note: the earlier "0 cuts" the user
+  saw was a **transient** cv2/av `libavdevice` duplicate-class crash (caught → returns []); detection
+  is reliable (407 in 10s) and the timeline handles 0 scenes gracefully.
 - **2026-06-09** — **Prod Studio UI rebuilt (React/Vite) + manual clip-marking timeline.** Resumed
   the interrupted "4 edits" session. Found 3/4 already done on the backend (yt-dlp `utils/download.py`;
   smart niche `CATEGORIES` taxonomy in `config.py`; manual-marking endpoints in `web/manual.py` +

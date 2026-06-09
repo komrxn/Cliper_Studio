@@ -13,3 +13,6 @@ models/
 cliper/web/frontend/node_modules/
 cliper/web/frontend/dist/
 cliper/web/frontend/.tmp/
+
+# tsc incremental build info
+cliper/web/frontend/*.tsbuildinfo
