@@ -15,6 +15,8 @@ from cliper.utils import social
 
 
 def test_select_survives_null_score(monkeypatch):
+    # opt into the OpenAI ranking path (3-level selection gates the LLM on availability now)
+    monkeypatch.setattr(llm, "available", lambda: True)
     monkeypatch.setattr(llm, "chat_json", lambda *a, **k: {"clips": [
         {"start": 5, "end": 25, "score": None, "reason": "x"},
     ]})
@@ -23,7 +25,10 @@ def test_select_survives_null_score(monkeypatch):
                   work_dir=Path("work"), out_dir=Path("out"))
     ctx.sources = [Source(id="vid", path=Path("x"), transcript=segs)]
     select_stage.run(ctx)
+    # the null-score LLM clip is coerced (score 0.0) and kept; audio supplement is empty (no real
+    # media), so exactly the one LLM-picked moment survives.
     assert len(ctx.clips) == 1
+    assert ctx.clips[0].score == 0.0
     assert ctx.clips[0].score == 0.0                    # null coerced safely, no crash
     assert 20.0 <= ctx.clips[0].duration <= 35.0        # snapped within bounds on boundaries
 

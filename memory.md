@@ -123,6 +123,22 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Changelog
 
+- **2026-06-09** — **Bug-fix pass: seek, render progress, captions, 3-level selection, URL ingest.**
+  (1) **Seek** "jumps to start": the mechanism was fine — the real bug was UX, the track only seeked
+  on a single click, so press-drag-to-scrub seeked once to the press point (near left = start). Added
+  **drag-to-scrub** + guarded the `startAt` restore so it can't override a user seek. Permanent e2e
+  test `tests/e2e/test_seek.py` (real click+drag) so it can't silently regress. (2) **3-level
+  selection** (`select.suggest`): TEXT (whisper transcript → sentence spans) → AUDIO (energy rank) →
+  SCENE (cut snap), for **every** niche (the suggest endpoint always transcribes now). OpenAI ranks
+  when available, **falls back to local text+audio on quota/outage** (verified: 429 → local pick).
+  Transcript cached in the registry (re-suggest instant); `_register_source` preserves it on
+  re-upload. (3) **Captions ON by default** + style toggle in Studio; clips endpoint takes a caption
+  override so subtitles burn regardless of niche (verified 54 words on the action niche). (4) **Global
+  render job** (`store.track` + `JobBar`): granular backend progress (cut→reframe→burn subs→uniquify→
+  export), visible across tabs, **navigation never blocks**. (5) **URL ingest** hardened: looser format
+  fallback, `CLIPER_COOKIES_FROM_BROWSER`/`_FILE` for auth-gated sites, error surfaced in the load
+  panel (not a silent stall). Verified end-to-end (API + headless Chrome), pytest 18/18. NOTE: the
+  OpenAI key in `.env` is **over quota** (429) — selection runs on the local path until it's topped up.
 - **2026-06-09** — **Prod hardening: state persistence, scene-detect isolation, Gallery, polish.**
   Fixed the "switching tabs resets Studio" bug — root cause was conditional render unmounting the
   view. Introduced a React Context **session store** (`web/frontend/src/store.tsx`): niche + tab

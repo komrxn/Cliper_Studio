@@ -17,18 +17,24 @@ const newSeg = (s: number, e: number, src: "ai" | "manual", extra?: Partial<Segm
   ...extra,
 });
 
+const CAPTION_STYLES = ["classic", "hormozi", "minimal"];
+
 export default function Studio() {
-  const { niche, accounts, notify, session, patchSession, resetSession, recent, refreshRecent, setTab } = useApp();
+  const { niche, accounts, notify, session, patchSession, resetSession, recent, refreshRecent, setTab, track } = useApp();
   const { source, segments, selected, current } = session;
 
   const [url, setUrl] = useState("");
   const [intake, setIntake] = useState<{ stage: string; progress: number } | null>(null);
+  const [intakeError, setIntakeError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"" | "suggest" | "render">("");
+  const [subsOn, setSubsOn] = useState(true);
+  const [subStyle, setSubStyle] = useState("classic");
   const playerRef = useRef<MediaPlayerInstance>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const runIntake = async (start: () => Promise<{ job_id: string }>) => {
     resetSession();
+    setIntakeError(null);
     setIntake({ stage: "starting", progress: 0 });
     try {
       const { job_id } = await start();
@@ -41,7 +47,8 @@ export default function Studio() {
       notify("ok", `Loaded "${result.title}" · ${result.scenes.length} scene cuts`);
     } catch (e) {
       setIntake(null);
-      notify("err", (e as Error).message);
+      setIntakeError((e as Error).message); // keep it on screen, not a fleeting toast
+      notify("err", "Couldn’t load that source");
     }
   };
 
@@ -64,12 +71,12 @@ export default function Studio() {
     setBusy("suggest");
     try {
       const { job_id } = await api.suggest(source.source_id, niche);
-      const res = (await pollJob(job_id, () => {})) as { suggestions: Suggestion[] };
+      const res = (await track(job_id, "Finding moments")) as { suggestions: Suggestion[] };
       patchSession({
         segments: res.suggestions.map((s) => newSeg(s.start, s.end, "ai", { score: s.score, reason: s.reason })),
         selected: null,
       });
-      notify("ok", `${res.suggestions.length} AI moments — drag the edges to fine-tune`);
+      notify("ok", `${res.suggestions.length} moments — drag the edges to fine-tune`);
     } catch (e) {
       notify("err", (e as Error).message);
     } finally {
@@ -82,8 +89,10 @@ export default function Studio() {
     setBusy("render");
     try {
       const segs = segments.map((s) => ({ start: s.start, end: s.end }));
-      const { job_id } = await api.makeClips(source.source_id, niche, segs);
-      const res = (await pollJob(job_id, () => {})) as { clips: string[] };
+      const caption = { enabled: subsOn, style: subStyle };
+      const { job_id } = await api.makeClips(source.source_id, niche, segs, caption);
+      // tracked globally → progress shows in the JobBar and navigation isn't blocked
+      const res = (await track(job_id, "Rendering clips")) as { clips: string[] };
       notify("ok", `Rendered ${res.clips.length} clip(s) → Gallery`);
       setTab("gallery");
     } catch (e) {
@@ -185,6 +194,17 @@ export default function Studio() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {intakeError && (
+              <div className="mt-4 rounded-xl border border-bad/30 bg-bad/10 p-3 text-xs text-bad">
+                <div className="mb-1 font-medium">Couldn’t download that link</div>
+                <div className="break-words text-bad/80">{intakeError}</div>
+                <div className="mt-2 text-ink-400">
+                  If the site needs a login (e.g. YouTube bot-check), set{" "}
+                  <code className="rounded bg-ink-800 px-1">CLIPER_COOKIES_FROM_BROWSER=chrome</code> and restart.
+                </div>
+              </div>
+            )}
 
             {recent.length > 0 && !intake && (
               <div className="mt-6">
@@ -341,6 +361,24 @@ export default function Studio() {
           )}
 
           <div className="border-t border-ink-800 p-4">
+            <div className="mb-3 flex items-center gap-3">
+              <label className="flex items-center gap-2 text-sm text-ink-200">
+                <input type="checkbox" checked={subsOn} onChange={(e) => setSubsOn(e.target.checked)} className="accent-accent" />
+                Subtitles
+              </label>
+              <select
+                className="input ml-auto w-auto py-1 pr-7 text-xs disabled:opacity-40"
+                value={subStyle}
+                onChange={(e) => setSubStyle(e.target.value)}
+                disabled={!subsOn}
+              >
+                {CAPTION_STYLES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </div>
             <div className="mb-3 flex items-center gap-2 text-xs text-ink-400">
               <span className="label">Accounts</span>
               {accounts.length ? (

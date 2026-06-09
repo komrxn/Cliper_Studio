@@ -39,8 +39,12 @@ export const api = {
   suggest: (sid: string, niche: string) =>
     postJSON<{ job_id: string }>(`/api/sources/${sid}/suggest`, { niche }),
 
-  makeClips: (sid: string, niche: string, segments: { start: number; end: number }[]) =>
-    postJSON<{ job_id: string }>(`/api/sources/${sid}/clips`, { niche, segments }),
+  makeClips: (
+    sid: string,
+    niche: string,
+    segments: { start: number; end: number }[],
+    caption?: { enabled: boolean; style: string },
+  ) => postJSON<{ job_id: string }>(`/api/sources/${sid}/clips`, { niche, segments, caption }),
 
   clips: (niche: string) => req<{ clips: Clip[] }>(`/api/clips/${niche}`),
 

@@ -207,6 +207,9 @@ def _register_source(path: Path, title: str, update) -> dict:
                       "interval": interval},
         "poster": poster_url, "created_at": time.time(),
     }
+    prev = SOURCES.get(path.stem)
+    if prev and prev.get("transcript"):
+        record["transcript"] = prev["transcript"]  # don't re-transcribe an already-known source
     SOURCES[path.stem] = record
     _save_sources()
     return _source_public(record)
@@ -273,26 +276,25 @@ def suggest_clips(sid: str, payload: dict = Body(...)):
     jid = _new_job()
 
     def work(update):
-        source = Source(id=sid, path=Path(src["path"]), title=src.get("title", ""))
+        from ..stages import select
+        from ..utils import captions
+
+        # TEXT level, for EVERY niche: transcribe so moments are sentence-bounded coherent scenes
+        # (not "pure loudness"). Cached in the registry → re-suggest is instant.
+        transcript = src.get("transcript", [])
+        if not transcript:
+            update(stage="transcribing (long videos take a while)", progress=0.1)
+            model = captions.load_model(niche.get("select", {}).get("transcribe_model", "base"))
+            transcript = captions.transcribe_segments(model, Path(src["path"]),
+                                                      language=niche.get("language"))
+            SOURCES[sid]["transcript"] = transcript
+            _save_sources()  # persist so reopen + re-suggest works after a restart
+        source = Source(id=sid, path=Path(src["path"]), title=src.get("title", ""),
+                        transcript=transcript)
         ctx = Context(niche=niche, work_dir=WORK / niche["name"], out_dir=OUT / niche["name"])
         ctx.sources = [source]
-        if niche.get("strategy") == "smart":
-            # dialogue niches: whisper transcript → OpenAI picks self-contained moments
-            from ..stages import select
-            from ..utils import captions
-            update(stage="transcribing", progress=0.1)
-            model = captions.load_model(niche.get("select", {}).get("transcribe_model", "base"))
-            source.transcript = captions.transcribe_segments(model, source.path,
-                                                             language=niche.get("language"))
-            update(stage="selecting moments", progress=0.75)
-            select.run(ctx)
-            SOURCES[sid]["transcript"] = source.transcript
-            _save_sources()  # persist transcript so reopen+render works after a restart
-        else:
-            # action/heuristic niches: scene + audio-energy windows, no OpenAI, no transcript
-            from ..stages import detect
-            update(stage="detecting moments", progress=0.3)
-            detect.run(ctx)
+        # AUDIO + SCENE levels happen inside select.suggest (energy ranking + scene-cut snap).
+        select.suggest(ctx, on_progress=lambda s, p: update(stage=s, progress=p))
         return {"suggestions": [{"start": c.start, "end": c.end, "score": c.score,
                                  "reason": c.reason} for c in ctx.clips]}
 
@@ -311,11 +313,16 @@ def make_clips(sid: str, payload: dict = Body(...)):
         raise HTTPException(400, "no segments")
     jid = _new_job()
 
+    caption = payload.get("caption")  # {enabled, style} — subtitles toggle from the UI
+
     def work(update):
         source = Source(id=sid, path=Path(src["path"]), title=src.get("title", ""),
                         transcript=src.get("transcript", []))
-        update(stage="rendering clips", progress=0.1)
-        clips = manual.clips_from_segments(niche, source, segments, src.get("scenes", []))
+        update(stage="starting render", progress=0.05)
+        clips = manual.clips_from_segments(
+            niche, source, segments, src.get("scenes", []), caption=caption,
+            on_progress=lambda s, p: update(stage=s, progress=p),
+        )
         return {"niche": niche["name"], "clips": [c.id for c in clips]}
 
     _run(jid, work)

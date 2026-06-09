@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useApp, type Tab } from "./store";
 import { Toast } from "./components/ui";
+import JobBar from "./components/JobBar";
 import Studio from "./views/Studio";
 import Gallery from "./views/Gallery";
 import Plan from "./views/Plan";
@@ -104,6 +105,7 @@ export default function App() {
         </AnimatePresence>
       </main>
 
+      <JobBar />
       <AnimatePresence>{toast && <Toast kind={toast.kind} text={toast.text} />}</AnimatePresence>
     </div>
   );

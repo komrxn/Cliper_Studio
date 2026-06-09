@@ -35,19 +35,38 @@ def snap_manual(scene_cuts, start: float, end: float, tol: float = 2.0) -> tuple
     return round(max(0.0, s), 3), round(e, 3)
 
 
-def clips_from_segments(niche: dict, source: Source, segments, scene_cuts) -> list[Clip]:
-    """Snap each segment to scenes, then run cut→reframe→caption?→uniquify→export. Returns clips."""
+def clips_from_segments(niche: dict, source: Source, segments, scene_cuts,
+                        *, caption: dict | None = None, on_progress=None) -> list[Clip]:
+    """Snap each segment to scenes, then run cut→reframe→caption?→uniquify→export.
+
+    `caption` (e.g. {"enabled": True, "style": "classic"}) overrides the niche's caption config so
+    subtitles can be forced on regardless of the niche default. `on_progress(stage, frac)` reports
+    progress for the UI. Returns the rendered clips.
+    """
     name = niche["name"]
+    if caption is not None:                       # UI override (subtitles toggle + style)
+        niche = {**niche, "caption": {**niche.get("caption", {}), **caption}}
+
+    def step(stage: str, frac: float) -> None:
+        if on_progress:
+            on_progress(stage, frac)
+
     ctx = Context(niche=niche, work_dir=ROOT / "work" / name, out_dir=ROOT / "out" / name)
     ctx.sources = [source]
     for i, seg in enumerate(segments):
         s, e = snap_manual(scene_cuts, float(seg["start"]), float(seg["end"]))
         ctx.clips.append(Clip(id=f"{source.id}_m{i:02d}", source_id=source.id,
                               start=s, end=e, score=1.0, reason="manual"))
+    step("cutting clips", 0.1)
     cut_stage.run(ctx)
+    step("reframing to 9:16", 0.35)
     reframe_stage.run(ctx)
     if niche.get("caption", {}).get("enabled"):
+        step("burning subtitles", 0.55)
         caption_stage.run(ctx)
+    step("uniquifying per account", 0.8)
     uniquify_stage.run(ctx)
+    step("exporting", 0.95)
     export_stage.run(ctx)
+    step("done", 1.0)
     return ctx.clips

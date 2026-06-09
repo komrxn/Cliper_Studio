@@ -49,8 +49,25 @@ def is_allowed_url(url: str) -> bool:
     return True
 
 
+def _cookie_opts() -> dict:
+    """Optional auth for sites that gate downloads (YouTube bot-check, age/region locks).
+
+    Set CLIPER_COOKIES_FROM_BROWSER=chrome|firefox|safari|edge to reuse your logged-in browser
+    session, or CLIPER_COOKIES_FILE=/path/to/cookies.txt for an exported cookie jar.
+    """
+    out: dict = {}
+    browser = os.environ.get("CLIPER_COOKIES_FROM_BROWSER", "").strip()
+    if browser:
+        out["cookiesfrombrowser"] = (browser,)
+    cookie_file = os.environ.get("CLIPER_COOKIES_FILE", "").strip()
+    if cookie_file:
+        out["cookiefile"] = cookie_file
+    return out
+
+
 def _opts(extra: dict) -> dict:
-    return {"quiet": True, "no_warnings": True, "noplaylist": True, "socket_timeout": 15, **extra}
+    return {"quiet": True, "no_warnings": True, "noplaylist": True, "socket_timeout": 20,
+            "retries": 3, "fragment_retries": 3, **_cookie_opts(), **extra}
 
 
 def probe(url: str) -> dict:
@@ -81,7 +98,8 @@ def download(url: str, dest_dir, on_progress=None) -> Path:
             on_progress((d.get("downloaded_bytes") or 0) / total if total else 0.0)
 
     opts = _opts({
-        "format": "bv*[height<=1080]+ba/b[height<=1080]",
+        # progressively looser: best ≤1080 video+audio → best ≤1080 muxed → best anything
+        "format": "bv*[height<=1080]+ba/b[height<=1080]/bv*+ba/b",
         "merge_output_format": "mp4",
         "outtmpl": str(dest_dir / "%(id)s.%(ext)s"),
         "progress_hooks": [hook],
