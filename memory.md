@@ -123,6 +123,22 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Changelog
 
+- **2026-06-09** — **Prod hardening: state persistence, scene-detect isolation, Gallery, polish.**
+  Fixed the "switching tabs resets Studio" bug — root cause was conditional render unmounting the
+  view. Introduced a React Context **session store** (`web/frontend/src/store.tsx`): niche + tab
+  persisted to localStorage, Studio session (source/segments/selected/playhead) + Gallery cache +
+  recent sources live above the views, so navigation no longer loses state; player re-seeks via a
+  new `startAt` prop. Fixed the intermittent **"0 cuts"** — `cv2`/`av` `libavdevice` clash crashed
+  scene detection after a smart Suggest loaded PyAV; new `cliper/utils/scenes.py` runs detection in
+  a **spawned subprocess** (import-light, never loads `av`); `manual.fast_scene_cuts` and
+  `detect._scene_cuts` delegate to it. Backend: **sources persisted** to `work/sources/registry.json`
+  (survive restart + reopen without re-download) via `GET /api/sources[/{sid}]` + posters;
+  `DELETE /api/clips/{niche}/{id}` + `render.delete_clip` (removes mp4s/json/state/thumb/edit).
+  Gallery: sort/filter/search, delete (confirm dialog), download. Global: `ErrorBoundary`,
+  `Confirm` dialog, keyboard (Space/←→/Del), Plan CSV download. **Verified** (headless Chrome +
+  live API): Studio survives Gallery→Studio round-trip (segments 3→3); niche+tab remembered after
+  reload; with `av` loaded a fresh source still detects 109/407/46 scenes; registry survives restart;
+  reopen + delete work; 0 console errors; pytest 17/17 (added `tests/test_prod.py`).
 - **2026-06-09** — **Studio player + filmstrip fix.** User: the timeline looked like noise and the
   raw `<video>` was poor. Root cause: the filmstrip squished up to 100 sprite frames into ~11px tiles
   (vertical smears) — the **sprite itself is fine** (verified: clean 10×10 frame grid). Fixes:

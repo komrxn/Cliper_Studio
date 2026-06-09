@@ -31,6 +31,7 @@ export interface SourceResult {
   title: string;
   scenes: number[];
   filmstrip: Filmstrip;
+  poster?: string | null;
 }
 
 export interface Suggestion {
@@ -67,6 +68,7 @@ export interface Clip {
   accounts_meta?: Record<string, AccountMeta>;
   qa?: { postable?: boolean; score?: number; reason?: string };
   words?: { start: number; end: number; word: string }[];
+  created_at?: number;
 }
 
 export interface ScheduleRow {

@@ -1,19 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { MediaPlayerInstance } from "@vidstack/react";
 import { api, fmtTime, pollJob } from "../api";
 import type { Job, Segment, SourceResult, Suggestion } from "../types";
-import type { Notify } from "../App";
+import { useApp } from "../store";
 import { EmptyState, ProgressBar, Spinner } from "../components/ui";
 import Timeline from "./Timeline";
 import Player from "./Player";
-
-interface Props {
-  niche: string;
-  accounts: string[];
-  notify: Notify;
-  onDone: () => void;
-}
 
 let segCounter = 0;
 const newSeg = (s: number, e: number, src: "ai" | "manual", extra?: Partial<Segment>): Segment => ({
@@ -24,29 +17,27 @@ const newSeg = (s: number, e: number, src: "ai" | "manual", extra?: Partial<Segm
   ...extra,
 });
 
-export default function Studio({ niche, accounts, notify, onDone }: Props) {
-  const [url, setUrl] = useState("");
-  const [source, setSource] = useState<SourceResult | null>(null);
-  const [segments, setSegments] = useState<Segment[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [current, setCurrent] = useState(0);
+export default function Studio() {
+  const { niche, accounts, notify, session, patchSession, resetSession, recent, refreshRecent, setTab } = useApp();
+  const { source, segments, selected, current } = session;
 
+  const [url, setUrl] = useState("");
   const [intake, setIntake] = useState<{ stage: string; progress: number } | null>(null);
   const [busy, setBusy] = useState<"" | "suggest" | "render">("");
   const playerRef = useRef<MediaPlayerInstance>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const runIntake = async (start: () => Promise<{ job_id: string }>) => {
-    setSource(null);
-    setSegments([]);
+    resetSession();
     setIntake({ stage: "starting", progress: 0 });
     try {
       const { job_id } = await start();
       const result = (await pollJob(job_id, (j: Job) =>
         setIntake({ stage: j.stage || "working", progress: j.progress }),
       )) as SourceResult;
-      setSource(result);
+      patchSession({ source: result, segments: [], selected: null, current: 0 });
       setIntake(null);
+      refreshRecent();
       notify("ok", `Loaded "${result.title}" · ${result.scenes.length} scene cuts`);
     } catch (e) {
       setIntake(null);
@@ -54,11 +45,19 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
     }
   };
 
-  const loadUrl = () => {
-    if (!url.trim()) return;
-    runIntake(() => api.createSourceFromUrl(url.trim()));
-  };
+  const loadUrl = () => url.trim() && runIntake(() => api.createSourceFromUrl(url.trim()));
   const loadFile = (f: File) => runIntake(() => api.uploadSource(f));
+
+  const openRecent = async (sid: string) => {
+    try {
+      const result = await api.getSource(sid);
+      patchSession({ source: result, segments: [], selected: null, current: 0 });
+      notify("ok", `Reopened "${result.title}"`);
+    } catch (e) {
+      notify("err", (e as Error).message);
+      refreshRecent();
+    }
+  };
 
   const suggest = async () => {
     if (!source) return;
@@ -66,7 +65,10 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
     try {
       const { job_id } = await api.suggest(source.source_id, niche);
       const res = (await pollJob(job_id, () => {})) as { suggestions: Suggestion[] };
-      setSegments(res.suggestions.map((s) => newSeg(s.start, s.end, "ai", { score: s.score, reason: s.reason })));
+      patchSession({
+        segments: res.suggestions.map((s) => newSeg(s.start, s.end, "ai", { score: s.score, reason: s.reason })),
+        selected: null,
+      });
       notify("ok", `${res.suggestions.length} AI moments — drag the edges to fine-tune`);
     } catch (e) {
       notify("err", (e as Error).message);
@@ -83,7 +85,7 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
       const { job_id } = await api.makeClips(source.source_id, niche, segs);
       const res = (await pollJob(job_id, () => {})) as { clips: string[] };
       notify("ok", `Rendered ${res.clips.length} clip(s) → Gallery`);
-      onDone();
+      setTab("gallery");
     } catch (e) {
       notify("err", (e as Error).message);
     } finally {
@@ -92,21 +94,46 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
   };
 
   const updateSeg = (id: string, start: number, end: number) =>
-    setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, start, end } : s)));
+    patchSession({ segments: segments.map((s) => (s.id === id ? { ...s, start, end } : s)) });
   const addSeg = () => {
     if (!source) return;
-    const s = current;
-    const e = Math.min(source.duration, current + 30);
-    const seg = newSeg(s, e, "manual");
-    setSegments((prev) => [...prev, seg]);
-    setSelected(seg.id);
+    const seg = newSeg(current, Math.min(source.duration, current + 30), "manual");
+    patchSession({ segments: [...segments, seg], selected: seg.id });
   };
-  const removeSeg = (id: string) => setSegments((prev) => prev.filter((s) => s.id !== id));
+  const removeSeg = (id: string) => patchSession({ segments: segments.filter((s) => s.id !== id) });
 
   const seek = (t: number) => {
-    if (playerRef.current) playerRef.current.currentTime = t;
-    setCurrent(t);
+    const clamped = Math.max(0, Math.min(source?.duration ?? t, t));
+    if (playerRef.current) playerRef.current.currentTime = clamped;
+    patchSession({ current: clamped });
   };
+
+  // Keyboard shortcuts (ignored while typing). Space play/pause · ←/→ seek ±5s · Del removes selected.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (!source || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable) return;
+      const p = playerRef.current;
+      if (e.code === "Space" && p) {
+        e.preventDefault();
+        p.paused ? p.play() : p.pause();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        seek(current - 5);
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        seek(current + 5);
+      } else if ((e.key === "Delete" || e.key === "Backspace") && selected) {
+        e.preventDefault();
+        removeSeg(selected);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [source, current, selected, segments]);
+
+  const otherRecent = recent.filter((r) => r.source_id !== source?.source_id).slice(0, 8);
 
   return (
     <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.55fr_1fr]">
@@ -158,6 +185,31 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {recent.length > 0 && !intake && (
+              <div className="mt-6">
+                <div className="label mb-2">Recent sources</div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {recent.slice(0, 6).map((r) => (
+                    <button
+                      key={r.source_id}
+                      onClick={() => openRecent(r.source_id)}
+                      className="group overflow-hidden rounded-lg border border-ink-800 bg-ink-950 text-left transition hover:border-accent/50"
+                    >
+                      <div className="aspect-video bg-ink-900">
+                        {r.poster && (
+                          <img src={r.poster} className="h-full w-full object-cover transition group-hover:opacity-90" alt="" />
+                        )}
+                      </div>
+                      <div className="p-1.5">
+                        <div className="truncate text-xs text-ink-200">{r.title}</div>
+                        <div className="text-[10px] tabular-nums text-ink-500">{fmtTime(r.duration)}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <>
@@ -167,13 +219,7 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
                 <div className="flex items-center gap-2 text-xs text-ink-400">
                   <span className="tabular-nums">{fmtTime(source.duration)}</span>
                   <span className="rounded bg-ink-800 px-1.5 py-0.5">{source.scenes.length} cuts</span>
-                  <button
-                    className="text-ink-400 hover:text-ink-200"
-                    onClick={() => {
-                      setSource(null);
-                      setSegments([]);
-                    }}
-                  >
+                  <button className="text-ink-400 hover:text-ink-200" onClick={() => resetSession()}>
                     change
                   </button>
                 </div>
@@ -181,8 +227,9 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
               <Player
                 src={source.video_url}
                 title={source.title}
+                startAt={current}
                 playerRef={playerRef}
-                onTime={setCurrent}
+                onTime={(t) => patchSession({ current: t })}
               />
             </div>
 
@@ -195,7 +242,7 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
                 current={current}
                 onSeek={seek}
                 onChange={updateSeg}
-                onSelect={setSelected}
+                onSelect={(id) => patchSession({ selected: id })}
                 selected={selected}
               />
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -206,10 +253,34 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
                   + Add clip at playhead
                 </button>
                 <span className="ml-auto text-xs text-ink-500">
-                  Drag a region to move · drag its edges to trim (edges snap to scene cuts)
+                  Drag to move · drag edges to trim (snap to cuts) ·{" "}
+                  <kbd className="rounded bg-ink-800 px-1">Space</kbd> play ·{" "}
+                  <kbd className="rounded bg-ink-800 px-1">←/→</kbd> ±5s ·{" "}
+                  <kbd className="rounded bg-ink-800 px-1">Del</kbd> remove
                 </span>
               </div>
             </div>
+
+            {otherRecent.length > 0 && (
+              <div className="panel p-4">
+                <div className="label mb-2">Switch source</div>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {otherRecent.map((r) => (
+                    <button
+                      key={r.source_id}
+                      onClick={() => openRecent(r.source_id)}
+                      title={r.title}
+                      className="w-28 shrink-0 overflow-hidden rounded-lg border border-ink-800 bg-ink-950 text-left transition hover:border-accent/50"
+                    >
+                      <div className="aspect-video bg-ink-900">
+                        {r.poster && <img src={r.poster} className="h-full w-full object-cover" alt="" />}
+                      </div>
+                      <div className="truncate p-1 text-[10px] text-ink-300">{r.title}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -219,9 +290,7 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
         <div className="panel flex flex-col">
           <div className="flex items-center justify-between border-b border-ink-800 px-4 py-3">
             <h3 className="text-sm font-semibold">Clips to render</h3>
-            <span className="rounded-md bg-ink-800 px-2 py-0.5 text-xs tabular-nums text-ink-300">
-              {segments.length}
-            </span>
+            <span className="rounded-md bg-ink-800 px-2 py-0.5 text-xs tabular-nums text-ink-300">{segments.length}</span>
           </div>
 
           {segments.length === 0 ? (
@@ -239,7 +308,7 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
                   <li
                     key={seg.id}
                     onClick={() => {
-                      setSelected(seg.id);
+                      patchSession({ selected: seg.id });
                       seek(seg.start);
                     }}
                     className={`flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors ${
@@ -252,9 +321,7 @@ export default function Studio({ niche, accounts, notify, onDone }: Props) {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 text-sm tabular-nums">
                         {fmtTime(seg.start)} → {fmtTime(seg.end)}
-                        <span className="rounded bg-ink-800 px-1 text-[10px] text-ink-400">
-                          {fmtTime(seg.end - seg.start)}
-                        </span>
+                        <span className="rounded bg-ink-800 px-1 text-[10px] text-ink-400">{fmtTime(seg.end - seg.start)}</span>
                       </div>
                       {seg.reason && <div className="truncate text-xs text-ink-500">{seg.reason}</div>}
                     </div>

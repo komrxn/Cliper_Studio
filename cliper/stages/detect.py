@@ -70,16 +70,10 @@ def _nms(windows, k, thresh=0.3):
 
 
 def _scene_cuts(path) -> list[float]:
-    try:
-        from scenedetect import ContentDetector, detect
-        scenes = detect(str(path), ContentDetector(), show_progress=False)
-        cuts = [s[0].get_seconds() for s in scenes]
-        if scenes:
-            cuts.append(scenes[-1][1].get_seconds())
-        return sorted(cuts)
-    except Exception as exc:  # scene detection is a refinement, never fatal
-        print(f"  (scene detect skipped: {exc})")
-        return []
+    """Full-accuracy scene cuts, run in an isolated subprocess (see `utils/scenes`) so OpenCV
+    doesn't clash with PyAV (`av`) in the same interpreter."""
+    from ..utils import scenes
+    return scenes.scene_cuts(path, fast=False)
 
 
 def _nearest(cuts, t, tol):

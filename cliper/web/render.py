@@ -68,6 +68,32 @@ def rerender_clip(niche: str, clip_id: str, *, words=None, text=None, style="cla
     return state
 
 
+def delete_clip(niche: str, clip_id: str) -> list[str]:
+    """Remove a clip everywhere: per-account mp4s + sidecar json, editable state, cached thumb,
+    and edit intermediates. Returns the list of removed paths (empty if nothing existed)."""
+    removed: list[str] = []
+    out_dir = ROOT / "out" / niche
+    if out_dir.exists():
+        for acc in out_dir.iterdir():
+            if not acc.is_dir():
+                continue
+            for ext in ("mp4", "json"):
+                f = acc / f"{clip_id}.{ext}"
+                if f.exists():
+                    f.unlink()
+                    removed.append(str(f))
+    for f in (
+        _state_path(niche, clip_id),
+        ROOT / "work" / niche / "thumbs" / f"{clip_id}.jpg",
+        ROOT / "work" / niche / "edit" / f"{clip_id}.mp4",
+        ROOT / "work" / niche / "edit" / f"{clip_id}.ass",
+    ):
+        if f.exists():
+            f.unlink()
+            removed.append(str(f))
+    return removed
+
+
 def update_meta(niche: str, clip_id: str, *, account=None, caption=None, hashtags=None) -> None:
     out_dir = ROOT / "out" / niche
     accounts = [account] if account else [p.name for p in out_dir.iterdir() if p.is_dir()]

@@ -1,5 +1,5 @@
 // Thin fetch client + a job-polling helper shared across views.
-import type { Clip, Job, Niche, ScheduleRow } from "./types";
+import type { Clip, Job, Niche, ScheduleRow, SourceResult } from "./types";
 
 async function req<T>(path: string, opts?: RequestInit): Promise<T> {
   const r = await fetch(path, opts);
@@ -32,6 +32,10 @@ export const api = {
     return req<{ job_id: string }>("/api/sources/upload", { method: "POST", body: fd });
   },
 
+  sources: () => req<{ sources: SourceResult[] }>("/api/sources"),
+
+  getSource: (sid: string) => req<SourceResult>(`/api/sources/${encodeURIComponent(sid)}`),
+
   suggest: (sid: string, niche: string) =>
     postJSON<{ job_id: string }>(`/api/sources/${sid}/suggest`, { niche }),
 
@@ -45,6 +49,9 @@ export const api = {
 
   rerender: (niche: string, clipId: string, body: object) =>
     postJSON<{ ok: boolean; state: Clip }>(`/api/clips/${niche}/${clipId}/rerender`, body),
+
+  deleteClip: (niche: string, clipId: string) =>
+    req<{ ok: boolean }>(`/api/clips/${niche}/${clipId}`, { method: "DELETE" }),
 
   schedule: (niche: string) =>
     postJSON<{ rows: ScheduleRow[] }>(`/api/schedule/${niche}`, {}),

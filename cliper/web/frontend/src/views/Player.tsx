@@ -7,6 +7,7 @@ import "@vidstack/react/player/styles/default/layouts/video.css";
 interface Props {
   src: string;
   title?: string;
+  startAt?: number; // restore the playhead when returning to Studio
   playerRef: React.RefObject<MediaPlayerInstance>;
   onTime: (t: number) => void;
 }
@@ -19,12 +20,21 @@ interface Props {
  * `{src,type}` object (or re-rendering on every timeupdate) makes Vidstack reload the source,
  * which snaps playback back to 0:00 and breaks seeking. Keep all props referentially stable.
  */
-function PlayerImpl({ src, title, playerRef, onTime }: Props) {
+function PlayerImpl({ src, title, startAt = 0, playerRef, onTime }: Props) {
   useEffect(() => {
     const p = playerRef.current;
     if (!p) return;
+    let restored = false;
     // fire only on real time changes (avoids churn from unrelated state updates)
-    return p.subscribe(({ currentTime }) => onTime(currentTime));
+    return p.subscribe(({ currentTime, canPlay }) => {
+      if (!restored && canPlay && startAt > 1) {
+        restored = true;
+        p.currentTime = startAt; // resume the playhead once the source is seekable
+      }
+      onTime(currentTime);
+    });
+    // startAt intentionally excluded: it's a one-shot restore captured at mount/src change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playerRef, onTime, src]);
 
   return (

@@ -1,47 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { api } from "./api";
-import type { Niche } from "./types";
+import { useApp, type Tab } from "./store";
 import { Toast } from "./components/ui";
 import Studio from "./views/Studio";
 import Gallery from "./views/Gallery";
 import Plan from "./views/Plan";
 
-type Tab = "studio" | "gallery" | "plan";
 const TABS: { id: Tab; label: string }[] = [
   { id: "studio", label: "Studio" },
   { id: "gallery", label: "Gallery" },
   { id: "plan", label: "Plan" },
 ];
 
-export interface Notify {
-  (kind: "ok" | "err", text: string): void;
-}
-
 export default function App() {
-  const [tab, setTab] = useState<Tab>("studio");
-  const [niches, setNiches] = useState<Niche[]>([]);
-  const [niche, setNiche] = useState<string>("");
-  const [online, setOnline] = useState<boolean | null>(null);
-  const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-
-  const notify = useCallback<Notify>((kind, text) => {
-    setToast({ kind, text });
-    setTimeout(() => setToast(null), 3200);
-  }, []);
-
-  useEffect(() => {
-    api
-      .niches()
-      .then(({ niches }) => {
-        setNiches(niches);
-        setOnline(true);
-        if (niches.length) setNiche(niches[0].name);
-      })
-      .catch(() => setOnline(false));
-  }, []);
-
-  const active = niches.find((n) => n.name === niche);
+  const { niches, niche, setNiche, online, tab, setTab, toast } = useApp();
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -101,11 +72,7 @@ export default function App() {
             )}
             <span
               className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ${
-                online === false
-                  ? "bg-bad/15 text-bad"
-                  : online
-                    ? "bg-good/15 text-good"
-                    : "bg-ink-800 text-ink-400"
+                online === false ? "bg-bad/15 text-bad" : online ? "bg-good/15 text-good" : "bg-ink-800 text-ink-400"
               }`}
             >
               <span
@@ -119,7 +86,8 @@ export default function App() {
         </div>
       </header>
 
-      {/* Body */}
+      {/* Body — views are mounted lazily but their session state lives in the store, so
+          switching tabs no longer resets Studio. */}
       <main className="mx-auto w-full max-w-[1400px] flex-1 px-5 py-6">
         <AnimatePresence mode="wait">
           <motion.div
@@ -129,11 +97,9 @@ export default function App() {
             exit={{ opacity: 0, y: -8 }}
             transition={{ duration: 0.18 }}
           >
-            {tab === "studio" && (
-              <Studio niche={niche} accounts={active?.accounts ?? []} notify={notify} onDone={() => setTab("gallery")} />
-            )}
-            {tab === "gallery" && <Gallery niche={niche} notify={notify} />}
-            {tab === "plan" && <Plan niche={niche} notify={notify} />}
+            {tab === "studio" && <Studio />}
+            {tab === "gallery" && <Gallery />}
+            {tab === "plan" && <Plan />}
           </motion.div>
         </AnimatePresence>
       </main>

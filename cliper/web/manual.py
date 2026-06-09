@@ -14,24 +14,11 @@ from ..stages import reframe as reframe_stage
 from ..stages import uniquify as uniquify_stage
 
 
-def fast_scene_cuts(path, downscale: int = 3, frame_skip: int = 1) -> list[float]:
-    """Quick scene-cut timestamps for the timeline (downscale+frame_skip ≈ 14s/12min on CPU)."""
-    try:
-        from scenedetect import ContentDetector, SceneManager, open_video
-        video = open_video(str(path))
-        sm = SceneManager()
-        sm.add_detector(ContentDetector())
-        sm.auto_downscale = False
-        sm.downscale = downscale
-        sm.detect_scenes(video, frame_skip=frame_skip, show_progress=False)
-        scenes = sm.get_scene_list()
-        cuts = [s[0].get_seconds() for s in scenes]
-        if scenes:
-            cuts.append(scenes[-1][1].get_seconds())
-        return sorted(cuts)
-    except Exception as exc:  # scene detection is a refinement, never fatal
-        print(f"  (fast_scene_cuts failed: {exc})")
-        return []
+def fast_scene_cuts(path) -> list[float]:
+    """Quick scene-cut timestamps for the timeline. Runs in an isolated subprocess (see
+    `utils/scenes`) so OpenCV doesn't clash with PyAV after a transcribe has loaded `av`."""
+    from ..utils import scenes
+    return scenes.scene_cuts(path, fast=True)
 
 
 def snap_manual(scene_cuts, start: float, end: float, tol: float = 2.0) -> tuple[float, float]:

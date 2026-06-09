@@ -2,15 +2,15 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { api } from "../api";
 import type { Clip } from "../types";
-import type { Notify } from "../App";
+import { useApp } from "../store";
 import { ScoreBadge, Spinner } from "../components/ui";
 
 interface Props {
   niche: string;
   clip: Clip;
-  notify: Notify;
   onClose: () => void;
   onSaved: () => void;
+  onDelete: () => void;
 }
 
 const STYLES = ["classic", "hormozi", "minimal"];
@@ -21,7 +21,8 @@ const POSITIONS = [
   { v: "bottom", label: "bottom" },
 ];
 
-export default function Editor({ niche, clip, notify, onClose, onSaved }: Props) {
+export default function Editor({ niche, clip, onClose, onSaved, onDelete }: Props) {
+  const { notify } = useApp();
   const accounts = clip.accounts ?? [];
   const [account, setAccount] = useState(accounts[0] ?? "");
   const [caption, setCaption] = useState("");
@@ -105,9 +106,26 @@ export default function Editor({ niche, clip, notify, onClose, onSaved }: Props)
           <h3 className="font-semibold">{clip.clip_id}</h3>
           <ScoreBadge score={clip.score} />
           {clip.qa?.reason && <span className="truncate text-xs text-ink-500">QA: {clip.qa.reason}</span>}
-          <button onClick={onClose} className="ml-auto rounded-lg px-2 py-1 text-ink-400 hover:bg-ink-800 hover:text-ink-100">
-            ✕
-          </button>
+          <div className="ml-auto flex items-center gap-1">
+            <a
+              href={account ? `/out/${niche}/${account}/${clip.clip_id}.mp4` : "#"}
+              download
+              className="rounded-lg px-2 py-1 text-ink-400 hover:bg-ink-800 hover:text-ink-100"
+              title="Download this account's clip"
+            >
+              ↓
+            </a>
+            <button
+              onClick={onDelete}
+              className="rounded-lg px-2 py-1 text-ink-400 hover:bg-bad/15 hover:text-bad"
+              title="Delete clip"
+            >
+              🗑
+            </button>
+            <button onClick={onClose} className="rounded-lg px-2 py-1 text-ink-400 hover:bg-ink-800 hover:text-ink-100">
+              ✕
+            </button>
+          </div>
         </div>
 
         <div className="grid flex-1 grid-cols-1 gap-5 overflow-y-auto p-5 md:grid-cols-[280px_1fr]">

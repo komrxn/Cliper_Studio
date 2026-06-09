@@ -1,15 +1,11 @@
 import { useState } from "react";
 import { api } from "../api";
 import type { ScheduleRow } from "../types";
-import type { Notify } from "../App";
+import { useApp } from "../store";
 import { EmptyState, Spinner } from "../components/ui";
 
-interface Props {
-  niche: string;
-  notify: Notify;
-}
-
-export default function Plan({ niche, notify }: Props) {
+export default function Plan() {
+  const { niche, notify } = useApp();
   const [rows, setRows] = useState<ScheduleRow[] | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -32,13 +28,18 @@ export default function Plan({ niche, notify }: Props) {
       <div className="mb-4 flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-tight">Posting plan</h2>
-          <p className="text-sm text-ink-400">
-            A staggered schedule across the niche’s accounts, built from the exported clips.
-          </p>
+          <p className="text-sm text-ink-400">A staggered schedule across the niche’s accounts, built from the exported clips.</p>
         </div>
-        <button className="btn-primary" onClick={build} disabled={loading}>
-          {loading ? <Spinner /> : "Build schedule"}
-        </button>
+        <div className="flex items-center gap-2">
+          {rows && rows.length > 0 && (
+            <a className="btn-ghost" href={`/out/${niche}/schedule.csv`} download>
+              Download CSV
+            </a>
+          )}
+          <button className="btn-primary" onClick={build} disabled={loading}>
+            {loading ? <Spinner /> : "Build schedule"}
+          </button>
+        </div>
       </div>
 
       <div className="panel overflow-hidden">

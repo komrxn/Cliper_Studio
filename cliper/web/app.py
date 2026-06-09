@@ -37,6 +37,38 @@ JOBS: dict[str, dict] = {}
 SOURCES: dict[str, dict] = {}
 _EXEC = ThreadPoolExecutor(max_workers=2)
 
+# Registry of loaded sources, persisted so a downloaded/uploaded video survives a server
+# restart and can be reopened in Studio without re-downloading.
+SRC_REGISTRY = WORK / "sources" / "registry.json"
+
+_SRC_PUBLIC = ("source_id", "video_url", "duration", "title", "scenes", "filmstrip", "poster")
+
+
+def _source_public(s: dict) -> dict:
+    """The subset of a source record the frontend consumes (no local path / transcript)."""
+    return {k: s[k] for k in _SRC_PUBLIC if k in s}
+
+
+def _save_sources() -> None:
+    SRC_REGISTRY.parent.mkdir(parents=True, exist_ok=True)
+    SRC_REGISTRY.write_text(json.dumps(SOURCES, ensure_ascii=False), encoding="utf-8")
+
+
+def _load_sources() -> None:
+    """Load the persisted registry on startup, dropping any whose video file is gone."""
+    if not SRC_REGISTRY.exists():
+        return
+    try:
+        data = json.loads(SRC_REGISTRY.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return
+    for sid, rec in data.items():
+        if rec.get("path") and Path(rec["path"]).exists():
+            SOURCES[sid] = rec
+
+
+_load_sources()
+
 
 # ---- jobs (thread pool + SSE) ------------------------------------------------
 
@@ -150,20 +182,34 @@ def create_job(payload: dict = Body(...)):
 # ---- sources (manual Studio) -------------------------------------------------
 
 def _register_source(path: Path, title: str, update) -> dict:
+    import time
+
     info = ffmpeg.probe(path)
-    update(stage="detecting scenes", progress=0.65)
+    update(stage="detecting scenes", progress=0.6)
     scenes = manual.fast_scene_cuts(path)
-    update(stage="building filmstrip", progress=0.9)
+    update(stage="building filmstrip", progress=0.85)
     cols, rows = 10, 10
     interval = max(2.0, (info.duration or 60) / (cols * rows))
     strip = WORK / "sources" / f"{path.stem}_strip.jpg"
     ffmpeg.sprite(path, strip, interval=interval, cols=cols, rows=rows)
-    SOURCES[path.stem] = {"id": path.stem, "path": str(path), "duration": info.duration,
-                          "scenes": scenes, "title": title}
-    return {"source_id": path.stem, "video_url": f"/work/sources/{path.name}",
-            "duration": info.duration, "title": title, "scenes": scenes,
-            "filmstrip": {"url": f"/work/sources/{strip.name}", "cols": cols, "rows": rows,
-                          "interval": interval}}
+    update(stage="thumbnail", progress=0.95)
+    poster = WORK / "sources" / f"{path.stem}_poster.jpg"
+    try:
+        ffmpeg.extract_frame(path, (info.duration or 10) * 0.1, poster, width=480)
+        poster_url = f"/work/sources/{poster.name}"
+    except Exception:  # poster is cosmetic — never fail the load over it
+        poster_url = None
+    record = {
+        "source_id": path.stem, "id": path.stem, "path": str(path),
+        "video_url": f"/work/sources/{path.name}", "duration": info.duration, "title": title,
+        "scenes": scenes,
+        "filmstrip": {"url": f"/work/sources/{strip.name}", "cols": cols, "rows": rows,
+                      "interval": interval},
+        "poster": poster_url, "created_at": time.time(),
+    }
+    SOURCES[path.stem] = record
+    _save_sources()
+    return _source_public(record)
 
 
 @app.post("/api/sources")
@@ -198,6 +244,26 @@ async def create_source_upload(file: UploadFile = File(...)):
     return {"job_id": jid}
 
 
+@app.get("/api/sources")
+def list_sources():
+    """Recently loaded sources (newest first) for the Studio 'Recent' strip / reopen."""
+    items = sorted(SOURCES.values(), key=lambda s: s.get("created_at", 0), reverse=True)
+    return {"sources": [_source_public(s) for s in items]}
+
+
+@app.get("/api/sources/{sid}")
+def get_source(sid: str):
+    """Reopen a previously loaded source without re-downloading."""
+    src = SOURCES.get(sid)
+    if not src:
+        raise HTTPException(404, "unknown source")
+    if not Path(src["path"]).exists():
+        SOURCES.pop(sid, None)
+        _save_sources()
+        raise HTTPException(410, "source file no longer on disk")
+    return _source_public(src)
+
+
 @app.post("/api/sources/{sid}/suggest")
 def suggest_clips(sid: str, payload: dict = Body(...)):
     src = SOURCES.get(sid)
@@ -221,6 +287,7 @@ def suggest_clips(sid: str, payload: dict = Body(...)):
             update(stage="selecting moments", progress=0.75)
             select.run(ctx)
             SOURCES[sid]["transcript"] = source.transcript
+            _save_sources()  # persist transcript so reopen+render works after a restart
         else:
             # action/heuristic niches: scene + audio-energy windows, no OpenAI, no transcript
             from ..stages import detect
@@ -270,7 +337,7 @@ def list_clips(niche: str):
                 mf = out_dir / acc / f"{st['clip_id']}.json"
                 if mf.exists():
                     meta[acc] = json.loads(mf.read_text(encoding="utf-8"))
-            clips.append({**st, "accounts_meta": meta})
+            clips.append({**st, "accounts_meta": meta, "created_at": sf.stat().st_mtime})
     clips.sort(key=lambda c: c.get("score", 0), reverse=True)
     return {"clips": clips}
 
@@ -312,6 +379,14 @@ def rerender(niche: str, clip_id: str, payload: dict = Body(...)):
     if thumb_path.exists():
         thumb_path.unlink()
     return {"ok": True, "state": state}
+
+
+@app.delete("/api/clips/{niche}/{clip_id}")
+def delete_clip(niche: str, clip_id: str):
+    removed = render.delete_clip(niche, clip_id)
+    if not removed:
+        raise HTTPException(404, "clip not found")
+    return {"ok": True, "removed": removed}
 
 
 @app.post("/api/schedule/{niche}")
