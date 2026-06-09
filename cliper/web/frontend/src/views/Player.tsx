@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { memo, useEffect } from "react";
 import { MediaPlayer, MediaProvider, type MediaPlayerInstance } from "@vidstack/react";
 import { defaultLayoutIcons, DefaultVideoLayout } from "@vidstack/react/player/layouts/default";
 import "@vidstack/react/player/styles/default/theme.css";
@@ -11,12 +11,19 @@ interface Props {
   onTime: (t: number) => void;
 }
 
-/** Vidstack player (replaces the raw <video>). Reports time up and exposes the instance via
- *  `playerRef` so the timeline can seek it (`playerRef.current.currentTime = t`). */
-export default function Player({ src, title, playerRef, onTime }: Props) {
+/**
+ * Vidstack player (replaces the raw <video>). Reports time up and exposes the instance via
+ * `playerRef` so the timeline can seek it (`playerRef.current.currentTime = t`).
+ *
+ * IMPORTANT: this is wrapped in `memo` and takes `src` as a STRING. Passing a fresh
+ * `{src,type}` object (or re-rendering on every timeupdate) makes Vidstack reload the source,
+ * which snaps playback back to 0:00 and breaks seeking. Keep all props referentially stable.
+ */
+function PlayerImpl({ src, title, playerRef, onTime }: Props) {
   useEffect(() => {
     const p = playerRef.current;
     if (!p) return;
+    // fire only on real time changes (avoids churn from unrelated state updates)
     return p.subscribe(({ currentTime }) => onTime(currentTime));
   }, [playerRef, onTime, src]);
 
@@ -24,9 +31,9 @@ export default function Player({ src, title, playerRef, onTime }: Props) {
     <MediaPlayer
       ref={playerRef}
       title={title}
-      src={{ src, type: "video/mp4" }}
+      src={src}
       aspectRatio="16/9"
-      crossOrigin
+      load="eager"
       playsInline
       className="w-full overflow-hidden rounded-xl bg-black"
     >
@@ -35,3 +42,6 @@ export default function Player({ src, title, playerRef, onTime }: Props) {
     </MediaPlayer>
   );
 }
+
+// Re-render only when the source actually changes — not on every timeupdate from the parent.
+export default memo(PlayerImpl, (a, b) => a.src === b.src && a.title === b.title);
