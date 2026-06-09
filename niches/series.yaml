@@ -1,0 +1,13 @@
+# Series & films (dialogue category): American series / movies / sitcoms.
+# These are talk-driven, so they live under the `dialogue` preset (smart select + captions + QA);
+# the taxonomy is by CONTENT TYPE, not per-show — see cliper/config.py CATEGORIES. Add real
+# episode/film sources below (or load them ad-hoc via the Studio UI).
+name: series
+category: dialogue
+language: en
+sources:
+  - REPLACE_ME      # e.g. https://www.youtube.com/watch?v=... or a local episode path
+accounts:
+  - series_a
+  - series_b
+hashtags: ["#series", "#tvshow", "#shorts"]

@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+*.log
+out/
+work/
+models/
+.env
+.claude/
+
+# frontend (Vite) — deps + build output; rebuild with `npm install && npm run build`
+cliper/web/frontend/node_modules/
+cliper/web/frontend/dist/
+cliper/web/frontend/.tmp/

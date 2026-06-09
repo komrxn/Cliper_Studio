@@ -1,0 +1,11 @@
+# Cartoons (dialogue category): R&M, Simpsons, etc. The `dialogue` preset supplies strategy,
+# captions, qa, clip length, etc. — see cliper/config.py CATEGORIES. Override anything inline.
+name: cartoons
+category: dialogue
+language: ru
+sources:
+  - work/test/rm_ep.mp4     # add more shows/episodes here (or via the UI / researcher later)
+accounts:
+  - cartoons_a
+  - cartoons_b
+hashtags: ["#cartoons", "#rickandmorty", "#shorts"]

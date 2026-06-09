@@ -1,0 +1,20 @@
+# Example niche. Copy into niches/<name>.yaml. One niche = one theme = one pool of accounts.
+# Pick a `category` and the preset (cliper/config.py CATEGORIES) fills in the strategy + defaults;
+# only override what you need.
+
+name: example
+category: dialogue          # dialogue (transcript+LLM) | action (scene+audio)
+language: en                # optional: pin whisper language (en, ru, …); omit = auto-detect
+sources:
+  - https://www.youtube.com/watch?v=VIDEO_ID   # any link yt-dlp supports / playlist / local path
+accounts:                   # disposable; rotate as they get struck/banned
+  - example_a
+  - example_b
+hashtags: ["#shorts", "#fyp"]
+
+# --- optional overrides (category preset already sets sensible values) ---
+# clip: { min_sec: 60, max_sec: 90, max_per_video: 6 }
+# caption: { enabled: true, style: classic, model: small }   # style: classic | hormozi | minimal
+# qa: { enabled: true, threshold: 0.45, keep_min: 3 }
+# uniquify: { mirror: false, speed_jitter: 0.03, zoom_jitter: 0.05 }
+# schedule: { per_day: 3, stagger_min: 90 }

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Cliper — build the UI</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0; min-height: 100vh; display: grid; place-items: center;
+        background: #0a0a0f; color: #e8e8f0;
+        font-family: Inter, system-ui, -apple-system, sans-serif;
+      }
+      .card {
+        max-width: 540px; padding: 40px; border: 1px solid #181821;
+        background: #0e0e14; border-radius: 20px; box-shadow: 0 8px 30px -12px rgba(0,0,0,.6);
+      }
+      h1 { font-size: 20px; margin: 0 0 8px; letter-spacing: -0.01em; }
+      p { color: #9a9ab0; font-size: 14px; line-height: 1.6; }
+      code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 13px; }
+      pre {
+        background: #0a0a0f; border: 1px solid #222230; border-radius: 12px;
+        padding: 14px 16px; color: #c7c7d6; overflow-x: auto;
+      }
+      .dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#6366f1; margin-right:8px; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1><span class="dot"></span>Cliper Studio</h1>
+      <p>
+        The production UI hasn't been built yet. From the repo root, build the React app once — it
+        compiles into <code>cliper/web/frontend/dist</code>, which this server then serves automatically.
+      </p>
+      <pre>cd cliper/web/frontend
+npm install
+npm run build</pre>
+      <p>Then reload this page (the backend serves the built app at the same address).</p>
+    </div>
+  </body>
+</html>

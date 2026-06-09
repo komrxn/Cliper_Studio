@@ -1,0 +1,10 @@
+# Action (action category): action scenes / sports / fights. The `action` preset uses scene+audio
+# heuristic selection, captions off, shorter clips — see cliper/config.py CATEGORIES.
+name: action
+category: action
+sources:
+  - REPLACE_ME
+accounts:
+  - action_a
+  - action_b
+hashtags: ["#action", "#shorts"]

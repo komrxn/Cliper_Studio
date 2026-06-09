@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-ink-950 text-ink-100 font-sans antialiased;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: rgba(99, 102, 241, 0.35);
+  }
+  /* Slim, dark scrollbars to match the studio shell. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-ink-700 rounded-full;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-ink-600;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-ink-900 border border-ink-800 rounded-2xl shadow-panel;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium
+      transition-colors duration-150 disabled:opacity-40 disabled:cursor-not-allowed
+      focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60;
+  }
+  .btn-primary {
+    @apply btn bg-accent text-white hover:bg-accent-deep;
+  }
+  .btn-ghost {
+    @apply btn bg-ink-800 text-ink-200 hover:bg-ink-700 border border-ink-700;
+  }
+  .input {
+    @apply w-full bg-ink-950 border border-ink-700 rounded-xl px-3 py-2 text-sm text-ink-100
+      placeholder:text-ink-400 focus:outline-none focus:ring-2 focus:ring-accent/50
+      focus:border-accent/50 transition;
+  }
+  .label {
+    @apply text-xs font-medium uppercase tracking-wide text-ink-400;
+  }
+  /* Loading shimmer for skeletons. */
+  .skeleton {
+    @apply relative overflow-hidden bg-ink-800 rounded-lg;
+  }
+  .skeleton::after {
+    content: "";
+    @apply absolute inset-0 -translate-x-full animate-shimmer;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.05),
+      transparent
+    );
+  }
+}

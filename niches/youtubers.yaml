@@ -1,0 +1,8 @@
+name: youtubers
+category: dialogue
+sources:
+  - https://www.youtube.com/watch?v=REPLACE_ME
+accounts:
+  - yt_clips_a
+  - yt_clips_b
+hashtags: ["#shorts", "#podcast"]

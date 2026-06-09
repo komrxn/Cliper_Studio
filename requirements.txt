@@ -1,0 +1,13 @@
+# Phase 0/1 — runs on the Mac (no GPU)
+PyYAML>=6.0
+yt-dlp>=2025.1.1
+scenedetect[opencv]>=0.6.4
+faster-whisper>=1.0.0      # clip-level transcription for dynamic subtitles (Mac CPU is fine)
+openai>=1.40.0             # AI reasoning layer: moment selection + clip QA (needs OPENAI_API_KEY)
+fastapi>=0.110             # editor web UI backend
+uvicorn[standard]>=0.29    # ASGI server for the UI
+python-multipart>=0.0.9    # file uploads in the UI
+pytest>=8.0
+
+# Whole-video transcription for smart selection also uses faster-whisper (base/small on Mac).
+# The strong LLM that would run locally on an 8 GB box is replaced by the OpenAI API.
