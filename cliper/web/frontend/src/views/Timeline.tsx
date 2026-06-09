@@ -40,6 +40,7 @@ export default function Timeline({
 }: Props) {
   const trackRef = useRef<HTMLDivElement>(null);
   const drag = useRef<DragState | null>(null);
+  const scrubbing = useRef(false);
   const [hoverT, setHoverT] = useState<number | null>(null);
   const [width, setWidth] = useState(1000);
 
@@ -73,9 +74,19 @@ export default function Timeline({
     [scenes, pxToTime],
   );
 
-  // --- dragging segments ---
+  const timeAtClientX = useCallback((clientX: number) => {
+    const rect = trackRef.current!.getBoundingClientRect();
+    const frac = (clientX - rect.left) / rect.width;
+    return Math.max(0, Math.min(duration, frac * duration));
+  }, [duration]);
+
+  // --- dragging segments AND scrubbing the playhead (drag-to-seek) ---
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
+      if (scrubbing.current) {
+        onSeek(timeAtClientX(e.clientX)); // drag anywhere on the track = scrub the video
+        return;
+      }
       const d = drag.current;
       if (!d) return;
       const dt = pxToTime(e.clientX - d.startX);
@@ -94,6 +105,7 @@ export default function Timeline({
     };
     const onUp = () => {
       drag.current = null;
+      scrubbing.current = false;
       document.body.style.cursor = "";
     };
     window.addEventListener("pointermove", onMove);
@@ -102,7 +114,7 @@ export default function Timeline({
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
-  }, [duration, onChange, snapToScene, pxToTime]);
+  }, [duration, onChange, onSeek, snapToScene, pxToTime, timeAtClientX]);
 
   const startDrag = (e: React.PointerEvent, seg: Segment, mode: DragMode) => {
     e.stopPropagation();
@@ -111,15 +123,14 @@ export default function Timeline({
     document.body.style.cursor = mode === "move" ? "grabbing" : "ew-resize";
   };
 
-  const trackClick = (e: React.PointerEvent) => {
-    if (drag.current) return;
-    const rect = trackRef.current!.getBoundingClientRect();
-    onSeek(((e.clientX - rect.left) / rect.width) * duration);
+  // Press anywhere on the track to seek, then drag to scrub continuously.
+  const trackDown = (e: React.PointerEvent) => {
+    if (drag.current) return; // a segment/handle grab takes precedence
+    scrubbing.current = true;
+    document.body.style.cursor = "col-resize";
+    onSeek(timeAtClientX(e.clientX));
   };
-  const trackMove = (e: React.PointerEvent) => {
-    const rect = trackRef.current!.getBoundingClientRect();
-    setHoverT(((e.clientX - rect.left) / rect.width) * duration);
-  };
+  const trackMove = (e: React.PointerEvent) => setHoverT(timeAtClientX(e.clientX));
 
   // --- filmstrip: render frames at a readable width that tile the full track ---
   const framesAvail = Math.max(1, Math.min(filmstrip.cols * filmstrip.rows, Math.ceil(duration / filmstrip.interval)));
@@ -138,7 +149,7 @@ export default function Timeline({
 
       <div
         ref={trackRef}
-        onPointerDown={trackClick}
+        onPointerDown={trackDown}
         onPointerMove={trackMove}
         onPointerLeave={() => setHoverT(null)}
         className="relative w-full cursor-text overflow-hidden rounded-xl border border-ink-700 bg-ink-950"

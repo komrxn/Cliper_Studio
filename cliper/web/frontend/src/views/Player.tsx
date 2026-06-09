@@ -27,9 +27,11 @@ function PlayerImpl({ src, title, startAt = 0, playerRef, onTime }: Props) {
     let restored = false;
     // fire only on real time changes (avoids churn from unrelated state updates)
     return p.subscribe(({ currentTime, canPlay }) => {
+      // Restore the playhead on return — but ONLY if the user hasn't already seeked
+      // (currentTime still ~0). Never override a user seek that raced canPlay.
       if (!restored && canPlay && startAt > 1) {
         restored = true;
-        p.currentTime = startAt; // resume the playhead once the source is seekable
+        if (currentTime < 1) p.currentTime = startAt;
       }
       onTime(currentTime);
     });
